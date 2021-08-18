@@ -51,9 +51,10 @@ import (
 
 // Config is the root config for Loki.
 type Config struct {
-	Target      flagext.StringSliceCSV `yaml:"target,omitempty"`
-	AuthEnabled bool                   `yaml:"auth_enabled,omitempty"`
-	HTTPPrefix  string                 `yaml:"http_prefix"`
+	Target       flagext.StringSliceCSV `yaml:"target,omitempty"`
+	AuthEnabled  bool                   `yaml:"auth_enabled,omitempty"`
+	AuthzEnabled bool                   `yaml:"authz_enabled,omitempty"`
+	HTTPPrefix   string                 `yaml:"http_prefix"`
 
 	Server           server.Config               `yaml:"server,omitempty"`
 	Distributor      distributor.Config          `yaml:"distributor,omitempty"`
@@ -204,11 +205,24 @@ func New(cfg Config) (*Loki, error) {
 func (t *Loki) setupAuthMiddleware() {
 	t.Cfg.Server.GRPCMiddleware = []grpc.UnaryServerInterceptor{serverutil.RecoveryGRPCUnaryInterceptor}
 	t.Cfg.Server.GRPCStreamMiddleware = []grpc.StreamServerInterceptor{serverutil.RecoveryGRPCStreamInterceptor}
-	if t.Cfg.AuthEnabled {
+
+	if t.Cfg.AuthzEnabled {
+		t.Cfg.Server.GRPCMiddleware = append(t.Cfg.Server.GRPCMiddleware, middleware.ServerUserHeaderInterceptor, serverutil.ServerClientUserHeaderInterceptor)
+		t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, GRPCStreamAuthInterceptor, GRPCStreamAuthzInterceptor)
+		if t.Cfg.AuthEnabled {
+			// multi tenancy w/ authz
+			t.HTTPAuthMiddleware = serverutil.AuthenticateUserMultiTenancy
+		} else {
+			// single tenancy w/ authz
+			t.HTTPAuthMiddleware = serverutil.AuthenticateUserSingleTenancy
+		}
+	} else if t.Cfg.AuthEnabled {
+		// multi tenancy, no authz
 		t.Cfg.Server.GRPCMiddleware = append(t.Cfg.Server.GRPCMiddleware, middleware.ServerUserHeaderInterceptor)
 		t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, GRPCStreamAuthInterceptor)
 		t.HTTPAuthMiddleware = middleware.AuthenticateUser
 	} else {
+		// single tenancy, no authz
 		t.Cfg.Server.GRPCMiddleware = append(t.Cfg.Server.GRPCMiddleware, fakeGRPCAuthUnaryMiddleware)
 		t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, fakeGRPCAuthStreamMiddleware)
 		t.HTTPAuthMiddleware = fakeHTTPAuthMiddleware
@@ -226,6 +240,15 @@ var GRPCStreamAuthInterceptor = func(srv interface{}, ss grpc.ServerStream, info
 		return handler(srv, ss)
 	default:
 		return middleware.StreamServerUserHeaderInterceptor(srv, ss, info, handler)
+	}
+}
+
+var GRPCStreamAuthzInterceptor = func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	switch info.FullMethod {
+	case "/logproto.Ingester/TransferChunks", "/frontend.Frontend/Process":
+		return handler(srv, ss)
+	default:
+		return serverutil.StreamServerClientUserHeaderInterceptor(srv, ss, info, handler)
 	}
 }
 
