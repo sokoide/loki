@@ -78,7 +78,7 @@ func authz(ctx *context.Context, r *http.Request) {
 		}
 	}
 	*ctx = user.InjectUserID(*ctx, clientUserID)
-	fmt.Printf("clinentUserID= %s injected\n", clientUserID)
+	fmt.Printf("clientUserID= %s injected\n", clientUserID)
 }
 
 // ClientUserHeaderInterceptor propagates the user ID from the context to gRPC metadata, which eventually ends up as a HTTP2 header.

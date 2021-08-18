@@ -496,7 +496,7 @@ func (i *Ingester) Push(ctx context.Context, req *logproto.PushRequest) (*logpro
 				req.Streams[k] = s
 				k++
 			} else {
-				level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("Not entitied for wirte. uid:%s, labels: %+v", clientUserID, s.Labels))
+				level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("Not entitled for write. uid:%s, labels: %+v", clientUserID, s.Labels))
 			}
 		}
 		req.Streams = req.Streams[:k]

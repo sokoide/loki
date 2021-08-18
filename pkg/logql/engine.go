@@ -315,7 +315,7 @@ func readStreams(i iter.EntryIterator, size uint32, dir logproto.Direction, inte
 		labels, entry := i.Labels(), i.Entry()
 
 		if !util.Entitled("read", clientUserID, labels) {
-			level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("Not entitied for read. uid:%s, labels: %s", clientUserID, labels))
+			level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("Not entitled for read. uid:%s, labels: %s", clientUserID, labels))
 			continue
 		}
 		forwardShouldOutput := dir == logproto.FORWARD &&
