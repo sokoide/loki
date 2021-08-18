@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"math"
 	"sort"
 	"time"
 
 	"github.com/cortexproject/cortex/pkg/tenant"
+	util_log "github.com/cortexproject/cortex/pkg/util/log"
 	"github.com/cortexproject/cortex/pkg/util/spanlogger"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
@@ -16,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	promql_parser "github.com/prometheus/prometheus/promql/parser"
+	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/loki/pkg/iter"
 	"github.com/grafana/loki/pkg/logproto"
@@ -59,18 +62,20 @@ func (opts *EngineOpts) applyDefault() {
 
 // Engine is the LogQL engine.
 type Engine struct {
-	timeout   time.Duration
-	evaluator Evaluator
-	limits    Limits
+	timeout      time.Duration
+	evaluator    Evaluator
+	limits       Limits
+	authzEnabled bool
 }
 
 // NewEngine creates a new LogQL Engine.
-func NewEngine(opts EngineOpts, q Querier, l Limits) *Engine {
+func NewEngine(opts EngineOpts, q Querier, l Limits, authzEnabled bool) *Engine {
 	opts.applyDefault()
 	return &Engine{
-		timeout:   opts.Timeout,
-		evaluator: NewDefaultEvaluator(q, opts.MaxLookBackPeriod),
-		limits:    l,
+		timeout:      opts.Timeout,
+		evaluator:    NewDefaultEvaluator(q, opts.MaxLookBackPeriod),
+		limits:       l,
+		authzEnabled: authzEnabled,
 	}
 }
 
@@ -83,8 +88,9 @@ func (ng *Engine) Query(params Params) Query {
 		parse: func(_ context.Context, query string) (Expr, error) {
 			return ParseExpr(query)
 		},
-		record: true,
-		limits: ng.limits,
+		record:       true,
+		limits:       ng.limits,
+		authzEnabled: ng.authzEnabled,
 	}
 }
 
@@ -95,12 +101,13 @@ type Query interface {
 }
 
 type query struct {
-	timeout   time.Duration
-	params    Params
-	parse     func(context.Context, string) (Expr, error)
-	limits    Limits
-	evaluator Evaluator
-	record    bool
+	timeout      time.Duration
+	params       Params
+	parse        func(context.Context, string) (Expr, error)
+	limits       Limits
+	evaluator    Evaluator
+	record       bool
+	authzEnabled bool
 }
 
 // Exec Implements `Query`. It handles instrumentation & defers to Eval.
@@ -164,7 +171,11 @@ func (q *query) Eval(ctx context.Context) (promql_parser.Value, error) {
 		}
 
 		defer util.LogErrorWithContext(ctx, "closing iterator", iter.Close)
-		streams, err := readStreams(iter, q.params.Limit(), q.params.Direction(), q.params.Interval())
+		clientUserID, err := user.ExtractUserID(ctx)
+		if q.authzEnabled && err != nil {
+			return nil, err
+		}
+		streams, err := readStreams(iter, q.params.Limit(), q.params.Direction(), q.params.Interval(), clientUserID)
 		return streams, err
 	default:
 		return nil, errors.New("Unexpected type (%T): cannot evaluate")
@@ -294,7 +305,7 @@ func PopulateMatrixFromScalar(data promql.Scalar, params Params) promql.Matrix {
 	return promql.Matrix{series}
 }
 
-func readStreams(i iter.EntryIterator, size uint32, dir logproto.Direction, interval time.Duration) (logqlmodel.Streams, error) {
+func readStreams(i iter.EntryIterator, size uint32, dir logproto.Direction, interval time.Duration, clientUserID string) (logqlmodel.Streams, error) {
 	streams := map[string]*logproto.Stream{}
 	respSize := uint32(0)
 	// lastEntry should be a really old time so that the first comparison is always true, we use a negative
@@ -302,6 +313,11 @@ func readStreams(i iter.EntryIterator, size uint32, dir logproto.Direction, inte
 	lastEntry := lastEntryMinTime
 	for respSize < size && i.Next() {
 		labels, entry := i.Labels(), i.Entry()
+
+		if !util.Entitled("read", clientUserID, labels) {
+			level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("Not entitied for read. uid:%s, labels: %s", clientUserID, labels))
+			continue
+		}
 		forwardShouldOutput := dir == logproto.FORWARD &&
 			(i.Entry().Timestamp.Equal(lastEntry.Add(interval)) || i.Entry().Timestamp.After(lastEntry.Add(interval)))
 		backwardShouldOutput := dir == logproto.BACKWARD &&

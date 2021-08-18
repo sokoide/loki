@@ -197,6 +197,11 @@ func (d *Distributor) Push(ctx context.Context, req *logproto.PushRequest) (*log
 		return nil, err
 	}
 
+	clientUserID, err := user.ExtractUserID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// First we flatten out the request into a list of samples.
 	// We use the heuristic of 1 sample per TS to size the array.
 	// We also work out the hash value at the same time.
@@ -284,6 +289,7 @@ func (d *Distributor) Push(ctx context.Context, req *logproto.PushRequest) (*log
 			localCtx, cancel := context.WithTimeout(context.Background(), d.clientCfg.RemoteTimeout)
 			defer cancel()
 			localCtx = user.InjectOrgID(localCtx, userID)
+			localCtx = user.InjectUserID(localCtx, clientUserID)
 			if sp := opentracing.SpanFromContext(ctx); sp != nil {
 				localCtx = opentracing.ContextWithSpan(localCtx, sp)
 			}

@@ -70,7 +70,7 @@ type Querier struct {
 }
 
 // New makes a new Querier.
-func New(cfg Config, store storage.Store, ingesterQuerier *IngesterQuerier, limits *validation.Overrides) (*Querier, error) {
+func New(cfg Config, store storage.Store, ingesterQuerier *IngesterQuerier, limits *validation.Overrides, authzEnabled bool) (*Querier, error) {
 	querier := Querier{
 		cfg:             cfg,
 		store:           store,
@@ -78,13 +78,13 @@ func New(cfg Config, store storage.Store, ingesterQuerier *IngesterQuerier, limi
 		limits:          limits,
 	}
 
-	querier.engine = logql.NewEngine(cfg.Engine, &querier, limits)
+	querier.engine = logql.NewEngine(cfg.Engine, &querier, limits, authzEnabled)
 
 	return &querier, nil
 }
 
-func (q *Querier) SetQueryable(queryable logql.Querier) {
-	q.engine = logql.NewEngine(q.cfg.Engine, queryable, q.limits)
+func (q *Querier) SetQueryable(queryable logql.Querier, authzEnabled bool) {
+	q.engine = logql.NewEngine(q.cfg.Engine, queryable, q.limits, authzEnabled)
 }
 
 // Select Implements logql.Querier which select logs via matchers and regex filters.
