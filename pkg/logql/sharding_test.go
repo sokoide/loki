@@ -59,7 +59,7 @@ func TestMappingEquivalence(t *testing.T) {
 		)
 
 		opts := EngineOpts{}
-		regular := NewEngine(opts, q, NoLimits, false)
+		regular := NewEngine(opts, q, NoLimits)
 		sharded := NewShardedEngine(opts, MockDownstreamer{regular}, nilMetrics, NoLimits)
 
 		t.Run(tc.query, func(t *testing.T) {

@@ -40,7 +40,7 @@ func TestIngester(t *testing.T) {
 		chunks: map[string][]chunk.Chunk{},
 	}
 
-	i, err := New(ingesterConfig, client.Config{}, store, limits, runtime.DefaultTenantConfigs(), nil, false)
+	i, err := New(ingesterConfig, client.Config{}, store, limits, runtime.DefaultTenantConfigs(), nil)
 	require.NoError(t, err)
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
@@ -222,7 +222,7 @@ func TestIngesterStreamLimitExceeded(t *testing.T) {
 		chunks: map[string][]chunk.Chunk{},
 	}
 
-	i, err := New(ingesterConfig, client.Config{}, store, overrides, runtime.DefaultTenantConfigs(), nil, false)
+	i, err := New(ingesterConfig, client.Config{}, store, overrides, runtime.DefaultTenantConfigs(), nil)
 	require.NoError(t, err)
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 

@@ -2,14 +2,16 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
+	"github.com/grafana/loki/pkg/entitlement"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 )
 
 // NewPrepopulateMiddleware creates a middleware which will parse incoming http forms.
@@ -46,7 +48,7 @@ var AuthenticateUserMultiTenancy = middleware.Func(func(next http.Handler) http.
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
-		authz(&ctx, r)
+		entitlement.InjectClientUserID(&ctx, r)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 })
@@ -56,30 +58,10 @@ var AuthenticateUserMultiTenancy = middleware.Func(func(next http.Handler) http.
 var AuthenticateUserSingleTenancy = middleware.Func(func(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := user.InjectOrgID(r.Context(), "fake")
-		authz(&ctx, r)
+		entitlement.InjectClientUserID(&ctx, r)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 })
-
-func authz(ctx *context.Context, r *http.Request) {
-	clientUserID := "fake"
-	// The leaf certificate is always 0th one in the verified chains
-	if r.TLS != nil && len(r.TLS.VerifiedChains) > 0 && len(r.TLS.VerifiedChains[0]) > 0 {
-		cname := r.TLS.VerifiedChains[0][0].Subject.CommonName
-		// TODO:
-		cnameIsTrusted := true
-		clientUserIDHeaderAvailable := false
-		if cnameIsTrusted && clientUserIDHeaderAvailable {
-			// TODO: Get clientUserID and inject it if cname istrusted
-			clientUserID = "TBD"
-		} else {
-			// Otherwise, use cname as clientUserID
-			clientUserID = cname
-		}
-	}
-	*ctx = user.InjectUserID(*ctx, clientUserID)
-	fmt.Printf("clientUserID= %s injected\n", clientUserID)
-}
 
 // ClientUserHeaderInterceptor propagates the user ID from the context to gRPC metadata, which eventually ends up as a HTTP2 header.
 // Copied and modified from weaveworks/common/middleware/grpc_auth.go to inject ClientUserID
@@ -115,7 +97,7 @@ func ServerClientUserHeaderInterceptor(ctx context.Context, req interface{}, inf
 	return handler(ctx, req)
 }
 
-// StreamClientServerUserHeaderInterceptor propagates the user ID from the gRPC metadata back to our context.
+// StreamServerClientUserHeaderInterceptor propagates the user ID from the gRPC metadata back to our context.
 // Copied and modified from weaveworks/common/middleware/grpc_auth.go to extract ClientUserID
 func StreamServerClientUserHeaderInterceptor(srv interface{}, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	_, ctx, err := extractClientUserIDFromGRPCRequest(ss.Context())
@@ -147,22 +129,35 @@ const (
 )
 
 func extractClientUserIDFromGRPCRequest(ctx context.Context) (string, context.Context, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return "", ctx, user.ErrNoOrgID
+	// extract userid from grpc metadata into ctx
+	// only when cname is trusted
+	if p, ok := peer.FromContext(ctx); ok {
+		if mtls, ok := p.AuthInfo.(credentials.TLSInfo); ok {
+			// client cname is always at 0th position
+			cname := mtls.State.PeerCertificates[0].Subject.CommonName
+			if entitlement.CnameIsTrusted(cname) {
+				md, ok := metadata.FromIncomingContext(ctx)
+				if !ok {
+					return "", ctx, user.ErrNoUserID
+				}
+
+				userIDs, okUserID := md[lowerUserIDHeaderName]
+
+				if !okUserID || len(userIDs) != 1 {
+					return "", ctx, user.ErrNoUserID
+				}
+
+				return userIDs[0], user.InjectUserID(ctx, userIDs[0]), nil
+			}
+		}
 	}
 
-	userIDs, okUserID := md[lowerUserIDHeaderName]
-
-	if !okUserID || len(userIDs) != 1 {
-		return "", ctx, user.ErrNoUserID
-	}
-
-	return userIDs[0], user.InjectUserID(ctx, userIDs[0]), nil
+	return "fake", ctx, nil
 }
 
 func injectClientUserIDIntoGRPCRequest(ctx context.Context) (context.Context, error) {
-	// TODO: Only set X-Scope-UserID if CNAME is in the safe list
+	// everyone can inject userid into gRPC metadata because it's validated during extract
+	// don't need to check client's cname
 	userID, err := user.ExtractUserID(ctx)
 	if err != nil {
 		// if ctx doesn't have userid, outgoing gRPC will use "fake" by default (e.g. healthcheck)

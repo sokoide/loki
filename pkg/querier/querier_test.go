@@ -35,7 +35,7 @@ func newQuerier(cfg Config, clientCfg client.Config, clientFactory ring_client.P
 	if err != nil {
 		return nil, err
 	}
-	return New(cfg, store, iq, limits, false)
+	return New(cfg, store, iq, limits)
 }
 
 func TestQuerier_Label_QueryTimeoutConfigFlag(t *testing.T) {

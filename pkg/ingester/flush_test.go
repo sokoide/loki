@@ -260,7 +260,7 @@ func newTestStore(t require.TestingT, cfg Config, walOverride WAL) (*testStore, 
 	limits, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
 
-	ing, err := New(cfg, client.Config{}, store, limits, runtime.DefaultTenantConfigs(), nil, false)
+	ing, err := New(cfg, client.Config{}, store, limits, runtime.DefaultTenantConfigs(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 

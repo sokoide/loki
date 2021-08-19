@@ -315,7 +315,7 @@ func prepare(t *testing.T, limits *validation.Limits, kvStore kv.Client, factory
 		}
 	}
 
-	d, err := New(distributorConfig, clientConfig, runtime.DefaultTenantConfigs(), ingestersRing, overrides, nil, false)
+	d, err := New(distributorConfig, clientConfig, runtime.DefaultTenantConfigs(), ingestersRing, overrides, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), d))
 

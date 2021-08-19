@@ -117,6 +117,8 @@ func TestEntitled(t *testing.T) {
 	ent.entClient = &mockEntitlementClient{}
 	ent.authzEnabled = true
 	entConfig.GrpcServer = "dummy:1234"
+	entConfig.LabelKey = "job"
+	entConfig.DefaultAllow = false
 
 	type testCase struct {
 		action      string
@@ -125,10 +127,34 @@ func TestEntitled(t *testing.T) {
 		want        bool
 	}
 
-	for _, c := range []testCase{{"read", "id1", "label1", true},
-		{"read", "id2", "label1", false}} {
+	for _, c := range []testCase{
+		{"read", "id1", "job=\"foo\"", true},
+		{"read", "id2", "job=\"foo\"", false},
+		{"read", "id1", "nojoblabel=\"hoge\"", false},
+	} {
 		got := Entitled(c.action, c.uid, c.labelString)
-		assert.Equal(t, got, c.want, fmt.Sprintf("testcase: %s,%s,%s,%v", c.action, c.uid, c.labelString, c.want))
+		assert.Equal(t, c.want, got, fmt.Sprintf("testcase: %s,%s,%s,%v", c.action, c.uid, c.labelString, c.want))
+	}
+
+	entConfig.DefaultAllow = true
+	got := Entitled("read", "id1", "nojoblabel=\"hoge\"")
+	assert.Equal(t, true, got)
+}
+
+func TestCnameIsTrusted(t *testing.T) {
+	type testCase struct {
+		cname string
+		want  bool
+	}
+
+	ec := EntitlementConfig{
+		TrustedCnames: []string{"foo", "bar"},
+	}
+	SetConfig(true, ec)
+
+	for _, c := range []testCase{{"foo", true}, {"bar", true}, {"hoge", false}} {
+		got := CnameIsTrusted(c.cname)
+		assert.Equal(t, c.want, got)
 	}
 }
 
