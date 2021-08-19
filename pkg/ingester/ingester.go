@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/loki/pkg/chunkenc"
+	"github.com/grafana/loki/pkg/entitlement"
 	"github.com/grafana/loki/pkg/ingester/client"
 	"github.com/grafana/loki/pkg/iter"
 	"github.com/grafana/loki/pkg/logproto"
@@ -492,7 +493,7 @@ func (i *Ingester) Push(ctx context.Context, req *logproto.PushRequest) (*logpro
 			// Labels is like
 			// labels: {agent="curl", filename="/path/to/file", host="host1", job="job1"}
 			level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("labels: %+v", s.Labels))
-			if listutil.Entitled("write", clientUserID, s.Labels) {
+			if entitlement.Entitled("write", clientUserID, s.Labels) {
 				req.Streams[k] = s
 				k++
 			} else {

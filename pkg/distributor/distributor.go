@@ -60,6 +60,7 @@ type Distributor struct {
 	ingestersRing    ring.ReadRing
 	validator        *Validator
 	pool             *ring_client.Pool
+	authzEnabled     bool
 
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances.
@@ -79,7 +80,7 @@ type Distributor struct {
 }
 
 // New a distributor creates.
-func New(cfg Config, clientCfg client.Config, configs *runtime.TenantConfigs, ingestersRing ring.ReadRing, overrides *validation.Overrides, registerer prometheus.Registerer) (*Distributor, error) {
+func New(cfg Config, clientCfg client.Config, configs *runtime.TenantConfigs, ingestersRing ring.ReadRing, overrides *validation.Overrides, registerer prometheus.Registerer, authzEnabled bool) (*Distributor, error) {
 	factory := cfg.factory
 	if factory == nil {
 		factory = func(addr string) (ring_client.PoolClient, error) {
@@ -124,6 +125,7 @@ func New(cfg Config, clientCfg client.Config, configs *runtime.TenantConfigs, in
 		distributorsRing:     distributorsRing,
 		validator:            validator,
 		pool:                 cortex_distributor.NewPool(clientCfg.PoolConfig, ingestersRing, factory, util_log.Logger),
+		authzEnabled:         authzEnabled,
 		ingestionRateLimiter: limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second),
 		labelCache:           labelCache,
 		ingesterAppends: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
@@ -197,9 +199,14 @@ func (d *Distributor) Push(ctx context.Context, req *logproto.PushRequest) (*log
 		return nil, err
 	}
 
-	clientUserID, err := user.ExtractUserID(ctx)
-	if err != nil {
-		return nil, err
+	var clientUserID string
+	if d.authzEnabled {
+		clientUserID, err = user.ExtractUserID(ctx)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		clientUserID = "fake"
 	}
 
 	// First we flatten out the request into a list of samples.

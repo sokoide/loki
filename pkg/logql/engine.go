@@ -20,6 +20,7 @@ import (
 	promql_parser "github.com/prometheus/prometheus/promql/parser"
 	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/loki/pkg/entitlement"
 	"github.com/grafana/loki/pkg/iter"
 	"github.com/grafana/loki/pkg/logproto"
 	"github.com/grafana/loki/pkg/logqlmodel"
@@ -314,7 +315,7 @@ func readStreams(i iter.EntryIterator, size uint32, dir logproto.Direction, inte
 	for respSize < size && i.Next() {
 		labels, entry := i.Labels(), i.Entry()
 
-		if !util.Entitled("read", clientUserID, labels) {
+		if !entitlement.Entitled("read", clientUserID, labels) {
 			level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("Not entitled for read. uid:%s, labels: %s", clientUserID, labels))
 			continue
 		}
