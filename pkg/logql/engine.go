@@ -18,8 +18,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	promql_parser "github.com/prometheus/prometheus/promql/parser"
-	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/loki/pkg/entitlement"
 	"github.com/grafana/loki/pkg/iter"
 	"github.com/grafana/loki/pkg/logproto"
 	"github.com/grafana/loki/pkg/logqlmodel"
@@ -62,20 +62,18 @@ func (opts *EngineOpts) applyDefault() {
 
 // Engine is the LogQL engine.
 type Engine struct {
-	timeout      time.Duration
-	evaluator    Evaluator
-	limits       Limits
-	authzEnabled bool
+	timeout   time.Duration
+	evaluator Evaluator
+	limits    Limits
 }
 
 // NewEngine creates a new LogQL Engine.
-func NewEngine(opts EngineOpts, q Querier, l Limits, authzEnabled bool) *Engine {
+func NewEngine(opts EngineOpts, q Querier, l Limits) *Engine {
 	opts.applyDefault()
 	return &Engine{
-		timeout:      opts.Timeout,
-		evaluator:    NewDefaultEvaluator(q, opts.MaxLookBackPeriod),
-		limits:       l,
-		authzEnabled: authzEnabled,
+		timeout:   opts.Timeout,
+		evaluator: NewDefaultEvaluator(q, opts.MaxLookBackPeriod),
+		limits:    l,
 	}
 }
 
@@ -88,9 +86,8 @@ func (ng *Engine) Query(params Params) Query {
 		parse: func(_ context.Context, query string) (Expr, error) {
 			return ParseExpr(query)
 		},
-		record:       true,
-		limits:       ng.limits,
-		authzEnabled: ng.authzEnabled,
+		record: true,
+		limits: ng.limits,
 	}
 }
 
@@ -101,13 +98,12 @@ type Query interface {
 }
 
 type query struct {
-	timeout      time.Duration
-	params       Params
-	parse        func(context.Context, string) (Expr, error)
-	limits       Limits
-	evaluator    Evaluator
-	record       bool
-	authzEnabled bool
+	timeout   time.Duration
+	params    Params
+	parse     func(context.Context, string) (Expr, error)
+	limits    Limits
+	evaluator Evaluator
+	record    bool
 }
 
 // Exec Implements `Query`. It handles instrumentation & defers to Eval.
@@ -171,8 +167,8 @@ func (q *query) Eval(ctx context.Context) (promql_parser.Value, error) {
 		}
 
 		defer util.LogErrorWithContext(ctx, "closing iterator", iter.Close)
-		clientUserID, err := user.ExtractUserID(ctx)
-		if q.authzEnabled && err != nil {
+		clientUserID, err := entitlement.GetClientUserID(ctx)
+		if err != nil {
 			return nil, err
 		}
 		streams, err := readStreams(iter, q.params.Limit(), q.params.Direction(), q.params.Interval(), clientUserID)
@@ -314,7 +310,7 @@ func readStreams(i iter.EntryIterator, size uint32, dir logproto.Direction, inte
 	for respSize < size && i.Next() {
 		labels, entry := i.Labels(), i.Entry()
 
-		if !util.Entitled("read", clientUserID, labels) {
+		if !entitlement.Entitled("read", clientUserID, labels) {
 			level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("Not entitled for read. uid:%s, labels: %s", clientUserID, labels))
 			continue
 		}

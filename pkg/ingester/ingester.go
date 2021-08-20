@@ -21,10 +21,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/loki/pkg/chunkenc"
+	"github.com/grafana/loki/pkg/entitlement"
 	"github.com/grafana/loki/pkg/ingester/client"
 	"github.com/grafana/loki/pkg/iter"
 	"github.com/grafana/loki/pkg/logproto"
@@ -129,7 +129,6 @@ type Ingester struct {
 	cfg           Config
 	clientConfig  client.Config
 	tenantConfigs *runtime.TenantConfigs
-	authzEnabled  bool
 
 	shutdownMtx  sync.Mutex // Allows processes to grab a lock and prevent a shutdown
 	instancesMtx sync.RWMutex
@@ -177,7 +176,7 @@ type ChunkStore interface {
 }
 
 // New makes a new Ingester.
-func New(cfg Config, clientConfig client.Config, store ChunkStore, limits *validation.Overrides, configs *runtime.TenantConfigs, registerer prometheus.Registerer, authzEnabled bool) (*Ingester, error) {
+func New(cfg Config, clientConfig client.Config, store ChunkStore, limits *validation.Overrides, configs *runtime.TenantConfigs, registerer prometheus.Registerer) (*Ingester, error) {
 	if cfg.ingesterClientFactory == nil {
 		cfg.ingesterClientFactory = client.New
 	}
@@ -188,7 +187,6 @@ func New(cfg Config, clientConfig client.Config, store ChunkStore, limits *valid
 		cfg:                   cfg,
 		clientConfig:          clientConfig,
 		tenantConfigs:         configs,
-		authzEnabled:          authzEnabled,
 		instances:             map[string]*instance{},
 		store:                 store,
 		periodicConfigs:       store.GetSchemaConfigs(),
@@ -480,8 +478,8 @@ func (i *Ingester) Push(ctx context.Context, req *logproto.PushRequest) (*logpro
 	}
 
 	// if authzEnabled, filter out entries which are not entitled
-	if i.authzEnabled {
-		clientUserID, err := user.ExtractUserID(ctx)
+	if entitlement.GetAuthzEnabled() {
+		clientUserID, err := entitlement.GetClientUserID(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -492,7 +490,7 @@ func (i *Ingester) Push(ctx context.Context, req *logproto.PushRequest) (*logpro
 			// Labels is like
 			// labels: {agent="curl", filename="/path/to/file", host="host1", job="job1"}
 			level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("labels: %+v", s.Labels))
-			if listutil.Entitled("write", clientUserID, s.Labels) {
+			if entitlement.Entitled("write", clientUserID, s.Labels) {
 				req.Streams[k] = s
 				k++
 			} else {

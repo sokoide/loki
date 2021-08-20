@@ -24,6 +24,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
+	"github.com/grafana/loki/pkg/entitlement"
 	"github.com/grafana/loki/pkg/ingester/client"
 	"github.com/grafana/loki/pkg/logproto"
 	"github.com/grafana/loki/pkg/logql"
@@ -197,7 +198,7 @@ func (d *Distributor) Push(ctx context.Context, req *logproto.PushRequest) (*log
 		return nil, err
 	}
 
-	clientUserID, err := user.ExtractUserID(ctx)
+	clientUserID, err := entitlement.GetClientUserID(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -195,7 +195,7 @@ func (t *Loki) initQuerier() (services.Service, error) {
 	if t.Cfg.Ingester.QueryStoreMaxLookBackPeriod != 0 {
 		t.Cfg.Querier.IngesterQueryStoreMaxLookback = t.Cfg.Ingester.QueryStoreMaxLookBackPeriod
 	}
-	t.Querier, err = querier.New(t.Cfg.Querier, t.Store, t.ingesterQuerier, t.overrides, t.Cfg.AuthzEnabled)
+	t.Querier, err = querier.New(t.Cfg.Querier, t.Store, t.ingesterQuerier, t.overrides)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +229,7 @@ func (t *Loki) initIngester() (_ services.Service, err error) {
 	t.Cfg.Ingester.LifecyclerConfig.RingConfig.KVStore.MemberlistKV = t.memberlistKV.GetMemberlistKV
 	t.Cfg.Ingester.LifecyclerConfig.ListenPort = t.Cfg.Server.GRPCListenPort
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Cfg.IngesterClient, t.Store, t.overrides, t.tenantConfigs, prometheus.DefaultRegisterer, t.Cfg.AuthzEnabled)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Cfg.IngesterClient, t.Store, t.overrides, t.tenantConfigs, prometheus.DefaultRegisterer)
 	if err != nil {
 		return
 	}
@@ -532,12 +532,12 @@ func (t *Loki) initRuler() (_ services.Service, err error) {
 
 	t.Cfg.Ruler.Ring.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Ruler.Ring.KVStore.MemberlistKV = t.memberlistKV.GetMemberlistKV
-	q, err := querier.New(t.Cfg.Querier, t.Store, t.ingesterQuerier, t.overrides, t.Cfg.AuthzEnabled)
+	q, err := querier.New(t.Cfg.Querier, t.Store, t.ingesterQuerier, t.overrides)
 	if err != nil {
 		return nil, err
 	}
 
-	engine := logql.NewEngine(t.Cfg.Querier.Engine, q, t.overrides, t.Cfg.AuthzEnabled)
+	engine := logql.NewEngine(t.Cfg.Querier.Engine, q, t.overrides)
 
 	t.ruler, err = ruler.NewRuler(
 		t.Cfg.Ruler,
