@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := all
-.PHONY: all images check-generated-files logcli loki loki-debug promtail promtail-debug loki-canary entserver-sample lint test clean yacc protos touch-protobuf-sources touch-protos
+.PHONY: all images check-generated-files logcli loki loki-debug promtail promtail-debug loki-canary entserver-sample entclient-sample lint test clean yacc protos touch-protobuf-sources touch-protos
 .PHONY: docker-driver docker-driver-clean docker-driver-enable docker-driver-push
 .PHONY: fluent-bit-image, fluent-bit-push, fluent-bit-test
 .PHONY: fluentd-image, fluentd-push, fluentd-test
@@ -127,7 +127,7 @@ binfmt:
 ################
 # Main Targets #
 ################
-all: promtail logcli loki loki-canary entserver-sample check-generated-files
+all: promtail logcli loki loki-canary entserver-sample entclient-sample check-generated-files
 
 # This is really a check for the CI to make sure generated files are built and checked in manually
 check-generated-files: touch-protobuf-sources yacc ragel protos clients/pkg/promtail/server/ui/assets_vfsdata.go
@@ -237,7 +237,17 @@ clients/cmd/promtail/promtail-debug: $(APP_GO_FILES) clients/pkg/promtail/server
 
 entserver-sample: protos ragel cmd/entserver-sample/entserver-sample
 
-cmd/entserver-sample/entserver-sample: $(APP_GO_FILES) cmd/entserver-sample/entserver-sample.go
+cmd/entserver-sample/entserver-sample: $(APP_GO_FILES) cmd/entserver-sample/main.go
+	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
+	$(NETGO_CHECK)
+
+####################
+# entclient-sample #
+####################
+
+entclient-sample: protos ragel cmd/entclient-sample/entclient-sample
+
+cmd/entclient-sample/entclient-sample: $(APP_GO_FILES) cmd/entclient-sample/main.go
 	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
 	$(NETGO_CHECK)
 
