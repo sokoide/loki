@@ -23,6 +23,11 @@ type entitlementOptions struct {
 }
 
 type configRoot struct {
+	Entitlements []configItem `yaml:"entitlements"`
+}
+
+type configItem struct {
+	OrgID   string   `yaml:"orgid"`
 	Readers []string `yaml:"readers"`
 	Writers []string `yaml:"writers"`
 }
@@ -37,26 +42,32 @@ type entitlementService struct {
 
 var logger log.Logger
 var config configRoot
-var readers map[string]bool = make(map[string]bool)
-var writers map[string]bool = make(map[string]bool)
+
+type configMapItem struct {
+	readers map[string]bool
+	writers map[string]bool
+}
+
+var configMap map[string]configMapItem = make(map[string]configMapItem)
 
 func (*entitlementService) Entitled(ctx context.Context, req *entitlement.EntitlementRequest) (*entitlement.EntitlementResponse, error) {
 	var entitled bool
+	c := configMap[req.OrgID]
 	switch strings.ToLower(req.Action) {
 	case "write":
-		if ok, value := writers[req.UserID]; ok {
+		if ok, value := c.writers[req.UserID]; ok {
 			entitled = value
-		} else if ok, value := writers["*"]; ok {
+		} else if ok, value := c.writers["*"]; ok {
 			entitled = value
 		}
 	default:
-		if ok, value := readers[req.UserID]; ok {
+		if ok, value := c.readers[req.UserID]; ok {
 			entitled = value
-		} else if ok, value := readers["*"]; ok {
+		} else if ok, value := c.readers["*"]; ok {
 			entitled = value
 		}
 	}
-	level.Debug(logger).Log("msg", fmt.Sprintf("UserID:%s, Action:%s, LabelValue:%s->%v", req.UserID, req.Action, req.LabelValue, entitled))
+	level.Debug(logger).Log("msg", fmt.Sprintf("OrgID:%s, UserID:%s, Action:%s, LabelValue:%s->%v", req.OrgID, req.UserID, req.Action, req.LabelValue, entitled))
 
 	res := &entitlement.EntitlementResponse{Entitled: entitled}
 	return res, nil
@@ -106,15 +117,24 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Printf("* config: %+v\n", config)
+	level.Info(logger).Log("config", fmt.Sprintf("%+v", config))
 
-	// convert readers/writers to map for faster query
-	for _, useritem := range config.Writers {
-		writers[useritem] = true
+	for _, configItem := range config.Entitlements {
+		// convert readers/writers to map for faster query
+		configMap[configItem.OrgID] = configMapItem{
+			readers: make(map[string]bool),
+			writers: make(map[string]bool),
+		}
+		c := configMap[configItem.OrgID]
+		for _, useritem := range configItem.Writers {
+			c.writers[useritem] = true
+		}
+		for _, user := range configItem.Readers {
+			c.readers[user] = true
+		}
 	}
-	for _, user := range config.Readers {
-		readers[user] = true
-	}
+
+	level.Info(logger).Log("configMap", fmt.Sprintf("%+v", configMap))
 
 	server := grpc.NewServer()
 	service := &entitlementService{}
