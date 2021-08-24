@@ -167,11 +167,15 @@ func (q *query) Eval(ctx context.Context) (promql_parser.Value, error) {
 		}
 
 		defer util.LogErrorWithContext(ctx, "closing iterator", iter.Close)
+		orgID, err := tenant.TenantID(ctx)
+		if err != nil {
+			orgID = "fake"
+		}
 		clientUserID, err := entitlement.GetClientUserID(ctx)
 		if err != nil {
 			return nil, err
 		}
-		streams, err := readStreams(iter, q.params.Limit(), q.params.Direction(), q.params.Interval(), clientUserID)
+		streams, err := readStreams(iter, q.params.Limit(), q.params.Direction(), q.params.Interval(), orgID, clientUserID)
 		return streams, err
 	default:
 		return nil, errors.New("Unexpected type (%T): cannot evaluate")
@@ -301,7 +305,7 @@ func PopulateMatrixFromScalar(data promql.Scalar, params Params) promql.Matrix {
 	return promql.Matrix{series}
 }
 
-func readStreams(i iter.EntryIterator, size uint32, dir logproto.Direction, interval time.Duration, clientUserID string) (logqlmodel.Streams, error) {
+func readStreams(i iter.EntryIterator, size uint32, dir logproto.Direction, interval time.Duration, orgID string, clientUserID string) (logqlmodel.Streams, error) {
 	streams := map[string]*logproto.Stream{}
 	respSize := uint32(0)
 	// lastEntry should be a really old time so that the first comparison is always true, we use a negative
@@ -310,7 +314,7 @@ func readStreams(i iter.EntryIterator, size uint32, dir logproto.Direction, inte
 	for respSize < size && i.Next() {
 		labels, entry := i.Labels(), i.Entry()
 
-		if !entitlement.Entitled("read", clientUserID, labels) {
+		if !entitlement.Entitled("read", orgID, clientUserID, labels) {
 			level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("Not entitled for read. uid:%s, labels: %s", clientUserID, labels))
 			continue
 		}

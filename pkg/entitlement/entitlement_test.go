@@ -64,11 +64,11 @@ func TestLabelValueFromLabelstringRace(t *testing.T) {
 func TestEntitlementResult(t *testing.T) {
 	ent.DeleteCache()
 
-	key := "hoge\tpage\tfoo"
+	key := "hoge\tpage\tfoo\tbar"
 	if _, ok := ent.entCache.Load(key); ok {
 		t.Fatalf("entCache shouldn't contain key:%s", key)
 	}
-	_, ok := ent.entitledCache("hoge", "page", "foo")
+	_, ok := ent.entitledCache("hoge", "page", "foo", "bar")
 	assert.Equal(t, ok, false)
 
 	ent.entCache.Store(key, entitlementResult{timestamp: time.Now().Unix(), entitled: true})
@@ -89,7 +89,7 @@ func TestEntitledRace(t *testing.T) {
 	for j := 0; j < GOROUTINES; j++ {
 		go func() {
 			for i := 0; i < 10_000; i++ {
-				Entitled("read", strconv.Itoa(i), "label1")
+				Entitled("read", "fake", strconv.Itoa(i), "label1")
 			}
 			wg.Done()
 		}()
@@ -122,22 +122,23 @@ func TestEntitled(t *testing.T) {
 
 	type testCase struct {
 		action      string
+		oid         string
 		uid         string
 		labelString string
 		want        bool
 	}
 
 	for _, c := range []testCase{
-		{"read", "id1", "job=\"foo\"", true},
-		{"read", "id2", "job=\"foo\"", false},
-		{"read", "id1", "nojoblabel=\"hoge\"", false},
+		{"read", "oid1", "id1", "job=\"foo\"", true},
+		{"read", "oid1", "id2", "job=\"foo\"", false},
+		{"read", "oid1", "id1", "nojoblabel=\"hoge\"", false},
 	} {
-		got := Entitled(c.action, c.uid, c.labelString)
+		got := Entitled(c.action, c.oid, c.uid, c.labelString)
 		assert.Equal(t, c.want, got, fmt.Sprintf("testcase: %s,%s,%s,%v", c.action, c.uid, c.labelString, c.want))
 	}
 
 	entConfig.DefaultAllow = true
-	got := Entitled("read", "id1", "nojoblabel=\"hoge\"")
+	got := Entitled("read", "oid1", "id1", "nojoblabel=\"hoge\"")
 	assert.Equal(t, true, got)
 }
 
@@ -195,7 +196,7 @@ func BenchmarkEntitled(t *testing.B) {
 		ent.DeleteCache()
 		ent.entClient = &mockEntitlementClient{}
 		for i := 0; i < 1000; i++ {
-			Entitled("read", strconv.Itoa(i), "label1")
+			Entitled("read", "fake", strconv.Itoa(i), "label1")
 		}
 	}
 }
@@ -213,7 +214,7 @@ func BenchmarkEntitledMulti(t *testing.B) {
 		for j := 0; j < GOROUTINES; j++ {
 			go func() {
 				for i := 0; i < 1000; i++ {
-					Entitled("read", strconv.Itoa(i), "label2")
+					Entitled("read", "fake", strconv.Itoa(i), "label2")
 				}
 				wg.Done()
 			}()

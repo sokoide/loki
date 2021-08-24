@@ -91,7 +91,7 @@ func GetAuthzEnabled() bool {
 }
 
 // Entitled returns true if the action/uid/labelString is entitled by the ent server
-func Entitled(action string, uid string, labelString string) bool {
+func Entitled(action string, oid string, uid string, labelString string) bool {
 	// if GrpcServer is not configured, there is no entitlement check
 	if ent.authzEnabled == false || entConfig.GrpcServer == "" {
 		level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("skipping ent check because authzEnabled:%v, GrpcServer:%v", ent.authzEnabled, entConfig.GrpcServer))
@@ -103,7 +103,7 @@ func Entitled(action string, uid string, labelString string) bool {
 		return entConfig.DefaultAllow
 	}
 	// 1. entitlement cache
-	if entResult, ok := ent.entitledCache(action, uid, labelString); ok {
+	if entResult, ok := ent.entitledCache(action, oid, uid, labelString); ok {
 		if time.Now().Unix()-entResult.timestamp <= 60 {
 			level.Debug(util_log.Logger).Log("msg",
 				fmt.Sprintf("Cache found for action:%s, uid:%s, value:%s, entitled:%v, Ts:%v",
@@ -119,7 +119,7 @@ func Entitled(action string, uid string, labelString string) bool {
 	}
 
 	// 2. talk to the entitlement server
-	message := &EntitlementRequest{Action: action, LabelValue: value, UserID: uid}
+	message := &EntitlementRequest{Action: action, LabelValue: value, OrgID: oid, UserID: uid}
 
 	var res *EntitlementResponse
 	var err error
@@ -136,8 +136,8 @@ func Entitled(action string, uid string, labelString string) bool {
 	}
 
 	// cache it
-	level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("Cached action:%s, uid:%s, value:%s, entitled:%v", action, uid, value, res.Entitled))
-	s := fmt.Sprintf("%s\t%s\t%s", action, uid, labelString)
+	level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("Cached action:%s, oid:%s, uid:%s, value:%s, entitled:%v", action, oid, uid, value, res.Entitled))
+	s := fmt.Sprintf("%s\t%s\t%s\t%s", action, oid, uid, labelString)
 	ent.entCache.Store(s, entitlementResult{timestamp: time.Now().Unix(), entitled: res.Entitled})
 
 	return res.Entitled
@@ -202,8 +202,8 @@ func clientUserIDInHeader(r *http.Request) string {
 	return r.Header.Get(entConfig.UserIDHeader)
 }
 
-func (e *Entitlement) entitledCache(action string, uid string, labelString string) (entitlementResult, bool) {
-	s := fmt.Sprintf("%s\t%s\t%s", action, uid, labelString)
+func (e *Entitlement) entitledCache(action string, oid string, uid string, labelString string) (entitlementResult, bool) {
+	s := fmt.Sprintf("%s\t%s\t%s\t%s", action, oid, uid, labelString)
 	if item, ok := e.entCache.Load(s); ok {
 		return item.(entitlementResult), true
 	}
